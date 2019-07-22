@@ -86,7 +86,7 @@ def decode_ssr_profile(ssr_profile):
     return ssr_profile_params
 
 
-def to_ss_qt5(ssr_profile_params):
+def ssr_to_ss_qt5(ssr_profile_params):
     if ssr_profile_params['protocol'] != 'origin':
         return None
 
@@ -94,7 +94,7 @@ def to_ss_qt5(ssr_profile_params):
     return dict((k, ssr_profile_params[k]) for k in ss_conf_key if k in ssr_profile_params)
 
 
-def ss_ify_decode(ssr_subscription):
+def ssr_ify_decode(ssr_subscription):
     ssr_profiles = decode_ssr_subscription(ssr_subscription)
     ss_qt5_params = {
         'configs': [],
@@ -103,26 +103,96 @@ def ss_ify_decode(ssr_subscription):
     }
     for ssr_profile in ssr_profiles:
         ssr_profile_params = decode_ssr_profile(ssr_profile)
-        ss_profile_params = to_ss_qt5(ssr_profile_params)
+        ss_profile_params = ssr_to_ss_qt5(ssr_profile_params)
         if ss_profile_params is not None:
             ss_qt5_params['configs'].append(ss_profile_params)
     with open('gui-config.json', 'w') as f:
         json.dump(ss_qt5_params, f, indent=4,
                   sort_keys=True, ensure_ascii=False)
 
-@bot.message_handler(func=lambda message: True)
-def send_request(message):
+@bot.message_handler(commands=['ssr'])
+def send_ssr_request(message):
     ssr_sub_url = message.text
     if ssr_sub_url[0:7] == 'http://' or ssr_sub_url[0:8] == 'https://':
         bot.send_message(message.chat.id, "Requesting...")
         url_information = requests.get(ssr_sub_url).text
         bot.edit_message_text("Decoding...", message.chat.id, message.message_id + 1)
-        ss_ify_decode(url_information)
+        ssr_ify_decode(url_information)
         doc = open('gui-config.json', 'rb')
         bot.edit_message_text("Sending file...", message.chat.id, message.message_id + 1)
         bot.send_document(message.chat.id, doc)
         os.system('rm -f gui-config.json')
     else:
         bot.send_message(message.chat.id, "Bad Request...")
+
+
+def decode_ssd_subsription(ssd_profile):
+    if ssd_profile[:6] != 'ssd://':
+        raise ValueError('Invalid SSD profile URI!')
+
+    ssd_profile = to_bytes(ssd_profile[6:])
+    ssd_profile = to_str(b64decode(ssd_profile))
+    ssd_profile = json.loads(ssd_profile)
+
+    return ssd_profile
+
+
+def ssd_to_ss_qt5(ssd_profile, force_plugin=None, force_plugin_options=None):
+    configs = []
+    for server in ssd_profile['servers']:
+        config = {
+            "server": server['server'],
+            "server_port": server.get('port', ssd_profile['port']),
+            "method": server.get('encryption', ssd_profile['encryption']),
+            "password": server.get('password', ssd_profile['password']),
+            "remarks": server.get('remarks', ssd_profile['airport']),
+        }
+        plugin = server.get('plugin', ssd_profile.get('plugin', force_plugin))
+        plugin_options = server.get(
+            'plugin_options',
+            ssd_profile.get('plugin_options', force_plugin_options))
+
+        if plugin and plugin_options:
+            config.update({'plugin': plugin, 'plugin_opts': plugin_options})
+        configs.append(config)
+    return configs
+
+
+def ssd_ify_decode(ssd_subscription):
+    ssd_profile = decode_ssd_subsription(ssd_subscription)
+
+    # FIXME
+    plugin = 'obfs-local'
+    plugin_options = 'obfs=tls;obfs-host=www.bing.com'
+    ss_configs = to_ss_qt5(ssd_profile, plugin, plugin_options)
+
+    ss_qt5_params = {
+        'configs': ss_configs,
+        'localPort': 1080,
+        'shareOverLan': False
+    }
+    with open('gui-config.json', 'w') as f:
+        json.dump(ss_qt5_params,
+                  f,
+                  indent=4,
+                  sort_keys=True,
+                  ensure_ascii=False)
+
+
+@bot.message_handler(commands=['ssd'])
+def send_ssd_request(message):
+    ssd_sub_url = message.text
+    if ssd_sub_url[0:7] == 'http://' or ssd_sub_url[0:8] == 'https://':
+        bot.send_message(message.chat.id, "Requesting...")
+        url_information = requests.get(ssd_sub_url).text
+        bot.edit_message_text("Decoding...", message.chat.id, message.message_id + 1)
+        ssd_ify_decode(url_information)
+        doc = open('gui-config.json', 'rb')
+        bot.edit_message_text("Sending file...", message.chat.id, message.message_id + 1)
+        bot.send_document(message.chat.id, doc)
+        os.system('rm -f gui-config.json')
+    else:
+        bot.send_message(message.chat.id, "Bad Request...")
+
 
 bot.polling(none_stop=True)
