@@ -3,11 +3,11 @@
 import base64
 import json
 import os
-import re
 import telebot
 import requests
 
 bot = telebot.TeleBot("")
+
 
 def to_bytes(s):
     if bytes != str:
@@ -110,21 +110,6 @@ def ssr_ify_decode(ssr_subscription):
         json.dump(ss_qt5_params, f, indent=4,
                   sort_keys=True, ensure_ascii=False)
 
-@bot.message_handler(commands=['ssr'])
-def send_ssr_request(message):
-    ssr_sub_url = message.text
-    if ssr_sub_url[0:7] == 'http://' or ssr_sub_url[0:8] == 'https://':
-        bot.send_message(message.chat.id, "Requesting...")
-        url_information = requests.get(ssr_sub_url).text
-        bot.edit_message_text("Decoding...", message.chat.id, message.message_id + 1)
-        ssr_ify_decode(url_information)
-        doc = open('gui-config.json', 'rb')
-        bot.edit_message_text("Sending file...", message.chat.id, message.message_id + 1)
-        bot.send_document(message.chat.id, doc)
-        os.system('rm -f gui-config.json')
-    else:
-        bot.send_message(message.chat.id, "Bad Request...")
-
 
 def decode_ssd_subsription(ssd_profile):
     if ssd_profile[:6] != 'ssd://':
@@ -164,7 +149,7 @@ def ssd_ify_decode(ssd_subscription):
     # FIXME
     plugin = 'obfs-local'
     plugin_options = 'obfs=tls;obfs-host=www.bing.com'
-    ss_configs = to_ss_qt5(ssd_profile, plugin, plugin_options)
+    ss_configs = ssd_to_ss_qt5(ssd_profile, plugin, plugin_options)
 
     ss_qt5_params = {
         'configs': ss_configs,
@@ -179,14 +164,22 @@ def ssd_ify_decode(ssd_subscription):
                   ensure_ascii=False)
 
 
-@bot.message_handler(commands=['ssd'])
-def send_ssd_request(message):
-    ssd_sub_url = message.text
-    if ssd_sub_url[0:7] == 'http://' or ssd_sub_url[0:8] == 'https://':
+@bot.message_handler(commands=['ssd', 'ssr'])
+def send_request(message):
+    groups = message.text.split()
+    if len(groups) < 2:
+        bot.send_message(message.chat.id, "Bad Request...")
+        return
+
+    cmd, sub_url = groups[:2]
+    if sub_url[0:7] == 'http://' or sub_url[0:8] == 'https://':
         bot.send_message(message.chat.id, "Requesting...")
-        url_information = requests.get(ssd_sub_url).text
+        url_information = requests.get(sub_url).text
         bot.edit_message_text("Decoding...", message.chat.id, message.message_id + 1)
-        ssd_ify_decode(url_information)
+        if cmd == '/ssr':
+            ssr_ify_decode(url_information)
+        else:
+            ssd_ify_decode(url_information)
         doc = open('gui-config.json', 'rb')
         bot.edit_message_text("Sending file...", message.chat.id, message.message_id + 1)
         bot.send_document(message.chat.id, doc)
